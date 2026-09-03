@@ -34,7 +34,8 @@ echo "npx psono-env sync" > .husky/pre-push
 ## O ciclo
 
 1. `psono-env run -- next dev` roda com `base` do vault por baixo e o teu `.env.local` por cima.
-   Valor pessoal nunca sai da máquina.
+   Valor pessoal nunca sai da máquina. Prefere arquivo? `psono-env pull --into .env` acrescenta o
+   que falta e não mexe no que já tem.
 2. Tu cria uma feature que precisa de `PIX_KEY`, põe no `.env.local`, dá `git push`. O hook roda
    `psono-env sync`: a chave é nova em relação ao vault, então sobe pra `/<repo>/feat-pagamento`
    (cria o secret se não existe). Só chave nova sobe; valor que já existe no vault nunca é tocado.
@@ -73,6 +74,7 @@ psono-env run -- next dev           # env composto, nada toca disco
 psono-env sync                      # sobe chaves novas pra /<repo>/<branch> (o hook chama isso)
 psono-env promote [branch] [--rm]   # funde as chaves da branch na base
 psono-env diff prod                 # vs outro secret, só nomes; exit 2 se faltar chave (gate de CI)
+psono-env pull --into .env          # acrescenta ao .env as chaves do vault que faltam (não toca nas tuas)
 psono-env pull > .env               # base como arquivo, se precisar
 psono-env push base .env            # dry-run: drift de chaves (chave nova sobe; valor existente fica)
 psono-env push base .env --values   # também sobrescreve valores existentes

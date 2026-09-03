@@ -36,6 +36,8 @@ export const AJUDA = `psono-env — /<repo>/base no Psono é a referência, /<re
   psono-env promote [branch] [--rm]      funde as chaves de /<repo>/<branch> na base (--rm manda a branch pro lixo)
   psono-env diff [alvo]                  compara com outro secret (ex: prod) — só NOMES; exit 2 se faltar
   psono-env pull [nome|/caminho]         despeja um secret como .env no stdout (default: base)
+  psono-env pull --into .env             ATUALIZA o arquivo: acrescenta as chaves do vault (base + branch)
+                                         que faltam nele, sem tocar nas que já tem
   psono-env push <nome|/caminho> <arquivo.env>   sobe DRIFT DE CHAVES: chave nova entra, valor existente fica
       --values   também sobrescreve valores das chaves que já existem
       --replace  espelho exato: o que falta no arquivo MORRE no vault (implica --values)
@@ -205,7 +207,26 @@ async function cmdDiff(args) {
   }
 }
 
-async function cmdPull(args) {
+/** pull --into <arquivo>: acrescenta ao arquivo as chaves do vault que ele não tem. Nunca altera valor existente. */
+async function cmdPullInto(arquivo) {
+  const proj = projeto();
+  const vault = await login();
+  const { branch, vault: vaultL } = await camadas(vault, proj, { existe: () => false, baseOpcional: true });
+  if (!vaultL.length) die(`nada no vault pra ${proj.base} ainda`);
+  const alvo = path.isAbsolute(arquivo) ? arquivo : path.join(proj.raiz, arquivo);
+  const atuais = existsSync(alvo) ? parseEnvFile(alvo) : [];
+  const tem = new Set(atuais.map((v) => v.key));
+  const doVault = compor(vaultL);
+  const novas = [...doVault].filter(([k]) => !tem.has(k)).map(([key, v]) => ({ key, value: v.value, origem: v.origem }));
+  if (!novas.length) { console.log(`${arquivo}: já tem todas as ${doVault.size} chaves do vault (branch ${branch || "-"})`); return; }
+  const texto = existsSync(alvo) ? readFileSync(alvo, "utf8") : "";
+  const sep = texto && !texto.endsWith("\n") ? "\n" : "";
+  writeFileSync(alvo, texto + sep + `\n# psono-env pull ${new Date().toISOString().slice(0, 10)}\n` + novas.map(fmt).join("\n") + "\n");
+  console.log(`${arquivo}: +${novas.length} chave(s) do vault (${[...new Set(novas.map((n) => n.origem))].join(", ")}): ${novas.map((n) => n.key).join(", ")}`);
+}
+
+async function cmdPull(args, flags) {
+  if (flags.has("--into")) return cmdPullInto(String(flags.get("--into")));
   const proj = projeto();
   const alvo = args[0] || proj.baseSecret;
   const caminho = alvo.startsWith("/") ? alvo : proj.caminho(alvo);
@@ -352,7 +373,7 @@ async function cmdPromote(args, flags) {
 
 // ---------------------------------------------------------------- main
 
-const COM_VALOR = new Set([]);
+const COM_VALOR = new Set(["--into"]);
 
 export function parseArgv(argv) {
   const sep = argv.indexOf("--");
@@ -380,7 +401,7 @@ export async function main(argv) {
     sync: () => cmdSync(flags),
     promote: () => cmdPromote(args, flags),
     diff: () => cmdDiff(args),
-    pull: () => cmdPull(args),
+    pull: () => cmdPull(args, flags),
     push: () => cmdPush(args, flags),
   };
   try {
