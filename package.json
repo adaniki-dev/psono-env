@@ -1,0 +1,12 @@
+{
+  "name": "psono-env",
+  "version": "2.0.0",
+  "description": "Env em camadas: a pasta do Psono com o nome do repo é a main, a branch git é o override.",
+  "type": "module",
+  "bin": { "psono-env": "bin/psono-env.mjs" },
+  "files": ["bin", "src", "README.md"],
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test \"test/*.test.mjs\"" },
+  "dependencies": { "tweetnacl": "^1.0.3" },
+  "license": "MIT"
+}
