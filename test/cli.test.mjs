@@ -97,3 +97,31 @@ test("camadas com baseOpcional: sem base não morre, temBase=false; sem a opçã
   assert.equal(r.temBase, false); assert.deepEqual(r.camadas, []);
   await assert.rejects(camadas(v, projeto(d)), /secret não existe/);
 });
+
+import { Readable, Writable } from "node:stream";
+import { readFileSync, statSync } from "node:fs";
+import { perguntar, tomlCredencial, gravarPrivado } from "../src/setup.mjs";
+import { parseTomlSimples } from "../src/cli.mjs";
+
+test("setup: perguntar lê do stream; toml round-tripa os 4 campos; arquivo 0600", async () => {
+  const out = new Writable({ write(_c, _e, cb) { cb(); } });
+  assert.equal(await perguntar("x: ", { secreto: true, input: Readable.from(["  abc \n"]), output: out }), "abc");
+  const cfg = { server_url: "https://p.x/server", api_key_id: "id-1", api_key_private_key: "a".repeat(64), api_key_secret_key: "b".repeat(64) };
+  const p = path.join(mkdtempSync(path.join(tmpdir(), "pe-")), ".psono-env.toml");
+  gravarPrivado(p, tomlCredencial(cfg));
+  assert.deepEqual(parseTomlSimples(readFileSync(p, "utf8")), cfg);
+  if (process.platform !== "win32") assert.equal(statSync(p).mode & 0o777, 0o600);
+});
+
+test("sem credencial: sync segue (fail-open) mas aponta o setup; ls morre apontando o setup", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "pe-repo-"));
+  execFileSync("git", ["init", "-q", "-b", "feat/x", dir]);
+  const env = { ...process.env, PSONO_SERVER_URL: "", PSONO_API_KEY_ID: "", PSONO_API_KEY_PRIVATE_KEY: "", PSONO_API_KEY_SECRET_KEY: "",
+                PSONO_ENV_CONFIG: path.join(dir, "nao.toml"), HOME: dir, USERPROFILE: dir };
+  const bin = path.resolve("bin/psono-env.mjs");
+  const r = execFileSync(process.execPath, [bin, "sync"], { cwd: dir, env, stdio: "pipe" });
+  let code = 0, err = "";
+  try { execFileSync(process.execPath, [bin, "ls"], { cwd: dir, env, stdio: "pipe" }); } catch (e) { code = e.status; err = String(e.stderr); }
+  assert.notEqual(code, 0);
+  assert.match(err, /psono-env setup/);
+});

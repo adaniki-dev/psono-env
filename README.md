@@ -50,8 +50,14 @@ echo "npx psono-env sync" > .husky/pre-push
 ## Credencial (por máquina, nunca no repo)
 
 API key no Psono (Other → API Keys): **Secret Restriction desmarcado**, "Allow insecure usage"
-desmarcado, read e write marcados. Não precisa linkar secret. Copia as três chaves pra
-`~/.psono-env.toml`:
+desmarcado, read e write marcados. Não precisa linkar secret. Aí, uma vez por máquina:
+
+```sh
+npx psono-env setup      # pede server, id e as duas chaves, testa o login, grava ~/.psono-env.toml (0600)
+```
+
+Sem credencial o `sync` do hook **avisa e deixa o push passar** (o vault fora do ar não pode
+travar ninguém); o resto dos comandos para e aponta o `setup`. O arquivo que o `setup` escreve:
 
 ```toml
 server_url = "https://psono.exemplo/server"
@@ -60,7 +66,8 @@ api_key_private_key = "..."
 api_key_secret_key = "..."
 ```
 Também aceita variáveis `PSONO_SERVER_URL`, `PSONO_API_KEY_ID`, `PSONO_API_KEY_PRIVATE_KEY`,
-`PSONO_API_KEY_SECRET_KEY` (CI). No WSL o arquivo em `C:\Users\<user>\` também é achado.
+`PSONO_API_KEY_SECRET_KEY` (CI), e `PSONO_ENV_CONFIG` aponta outro arquivo (aí só ele conta).
+No WSL o arquivo em `C:\Users\<user>\` também é achado.
 
 Key sem restrição enxerga tudo que o usuário enxerga. Pra limitar, usa um usuário Psono
 dedicado que só recebe as pastas de env por share.
@@ -68,6 +75,7 @@ dedicado que só recebe as pastas de env por share.
 ## Comandos
 
 ```sh
+psono-env setup                     # uma vez por máquina: credencial validada em ~/.psono-env.toml
 psono-env ls                        # o vault (pastas e secrets de env)
 psono-env resolve                   # quem ganhou cada chave
 psono-env run -- next dev           # env composto, nada toca disco

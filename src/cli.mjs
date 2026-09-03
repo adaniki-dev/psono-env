@@ -25,6 +25,7 @@ import path from "node:path";
 import { Vault, VARS_FIELD, ENV_TYPE, resolverCaminho, listar, lerEnv } from "./vault.mjs";
 import { die, ErroPsonoEnv, aviso, parseEnvFile, fmt, nomeValido, avisarNomesInvalidos, gitRoot, branchAtual, slug,
          camadasLocais, compor, mesclar, diffChaves } from "./env.mjs";
+import { perguntar, fecharPrompt, tomlCredencial, gravarPrivado } from "./setup.mjs";
 
 export const AJUDA = `psono-env — /<repo>/base no Psono é a referência, /<repo>/<branch> é o override da branch.
 
@@ -43,11 +44,13 @@ export const AJUDA = `psono-env — /<repo>/base no Psono é a referência, /<re
       --replace  espelho exato: o que falta no arquivo MORRE no vault (implica --values)
       --yes      aplica (sem isso é dry-run)     --rm  queima o arquivo depois
 
-Husky: .husky/pre-push -> "npx psono-env sync". Credencial: ~/.psono-env.toml.`;
+  psono-env setup                        por dev, uma vez: pede a API key, valida o login e grava ~/.psono-env.toml
+
+Husky: .husky/pre-push -> "npx psono-env sync". Credencial: \`psono-env setup\` (ou variáveis PSONO_*).`;
 
 // ---------------------------------------------------------------- config
 
-function parseTomlSimples(txt) {
+export function parseTomlSimples(txt) {
   const out = {};
   for (const raw of txt.split(/\r?\n/)) {
     const line = raw.trim();
@@ -63,9 +66,9 @@ function parseTomlSimples(txt) {
 }
 
 export function acharConfigPath() {
-  const cands = [];
-  if (process.env.PSONO_ENV_CONFIG) cands.push(process.env.PSONO_ENV_CONFIG);
-  cands.push(path.join(homedir(), ".psono-env.toml"));
+  // PSONO_ENV_CONFIG explícito é autoridade: sem fallback pra home nem pro Windows
+  if (process.env.PSONO_ENV_CONFIG) return { path: existsSync(process.env.PSONO_ENV_CONFIG) ? process.env.PSONO_ENV_CONFIG : null, cands: [process.env.PSONO_ENV_CONFIG] };
+  const cands = [path.join(homedir(), ".psono-env.toml")];
   if (platform() === "linux" && /microsoft/i.test(release()) && existsSync("/mnt/c/Users"))
     for (const u of readdirSync("/mnt/c/Users")) cands.push(`/mnt/c/Users/${u}/.psono-env.toml`);
   return { path: cands.find((c) => existsSync(c)) || null, cands };
@@ -78,7 +81,8 @@ export function carregarConfig(env = process.env) {
   const doArq = p ? parseTomlSimples(readFileSync(p, "utf8")) : {};
   const cfg = { ...doArq, ...Object.fromEntries(Object.entries(doEnv).filter(([, v]) => v)) };
   for (const k of ["server_url", "api_key_id", "api_key_private_key", "api_key_secret_key"])
-    if (!cfg[k]) die(`falta ${k} (${p ? p : "nenhum config achado: " + cands.join(", ")}; ou variável ${"PSONO_" + k.toUpperCase()})`);
+    if (!cfg[k]) die(p ? `falta ${k} em ${p} (ou variável ${"PSONO_" + k.toUpperCase()}) — roda \`npx psono-env setup\``
+                       : `sem credencial do Psono nesta máquina — roda \`npx psono-env setup\` (procurei: ${cands.join(", ")})`);
   return cfg;
 }
 
@@ -375,6 +379,37 @@ async function cmdPromote(args, flags) {
 
 const COM_VALOR = new Set(["--into"]);
 
+export function caminhoConfigDev(env = process.env) {
+  return env.PSONO_ENV_CONFIG || path.join(homedir(), ".psono-env.toml");
+}
+
+async function cmdSetup() {
+  const p = caminhoConfigDev();
+  console.log(`psono-env setup — grava a tua API key do Psono em ${p} (0600, nunca no repo).`);
+  console.log(`No Psono: Settings > API Keys > Create. DESMARCA "Secret Restriction" (a key precisa navegar o vault)`);
+  console.log(`e marca leitura + escrita. A tela mostra id, private key e secret key; cola cada um aqui.`);
+  if (existsSync(p)) {
+    const r = await perguntar(`${p} já existe. Sobrescrever? [s/N] `);
+    if (!/^s/i.test(r)) { fecharPrompt(); console.log("deixei como estava."); return; }
+  }
+  const cfg = {};
+  cfg.server_url = (await perguntar("server_url (ex: https://psono.empresa.com/server): ")).replace(/\/+$/, "");
+  cfg.api_key_id = await perguntar("api_key_id: ");
+  cfg.api_key_private_key = await perguntar("api_key_private_key: ", { secreto: true });
+  cfg.api_key_secret_key = await perguntar("api_key_secret_key: ", { secreto: true });
+  fecharPrompt();
+  for (const [k, v] of Object.entries(cfg)) if (!v) die(`${k} vazio`);
+  if (!/^https?:\/\//.test(cfg.server_url)) die("server_url precisa começar com http(s)://");
+  if (!/^[0-9a-f]{64}$/i.test(cfg.api_key_private_key) || !/^[0-9a-f]{64}$/i.test(cfg.api_key_secret_key))
+    die("private key e secret key são 64 caracteres hex (copia do painel da API key)");
+  let vault;
+  try { vault = await new Vault(cfg).login(); await vault.datastore(); }
+  catch (e) { die(`o Psono recusou a credencial: ${e.message}`); }
+  gravarPrivado(p, tomlCredencial(cfg));
+  console.log(`ok: login válido em ${cfg.server_url}. Gravado ${p}.`);
+  console.log(`Próximo passo dentro de um repo: npx psono-env ls  (ou pull --into .env)`);
+}
+
 export function parseArgv(argv) {
   const sep = argv.indexOf("--");
   const head = sep < 0 ? argv : argv.slice(0, sep);
@@ -395,6 +430,7 @@ export async function main(argv) {
   if (!pos.length || flags.has("--help") || pos[0] === "help") { console.log(AJUDA); return; }
   const [cmd, ...args] = pos;
   const tabela = {
+    setup: () => cmdSetup(),
     ls: () => cmdLs(args, flags),
     resolve: () => cmdResolve(),
     run: () => cmdRun(depois, flags),
