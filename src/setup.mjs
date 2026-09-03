@@ -21,7 +21,8 @@ export function perguntar(texto, { secreto = false, input = process.stdin, outpu
   abrir(input, output);
   const st = _st;
   return new Promise((resolve) => {
-    const fim = (v) => { if (st.mudo) { st.mudo = false; output.write("\n"); } resolve(v.trim()); };
+    // no modo mudo o dev não vê nada entrar: depois do Enter mostra quantos caracteres chegaram
+    const fim = (v) => { if (st.mudo) { st.mudo = false; output.write(`(${v.trim().length} caracteres)\n`); } resolve(v.trim()); };
     output.write(texto);
     st.mudo = secreto && !!input.isTTY;   // só o eco some; o prompt já foi escrito
     if (st.fila.length) return fim(st.fila.shift());

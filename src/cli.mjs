@@ -44,7 +44,8 @@ export const AJUDA = `psono-env — /<repo>/base no Psono é a referência, /<re
       --replace  espelho exato: o que falta no arquivo MORRE no vault (implica --values)
       --yes      aplica (sem isso é dry-run)     --rm  queima o arquivo depois
 
-  psono-env setup                        por dev, uma vez: pede a API key, valida o login e grava ~/.psono-env.toml
+  psono-env setup [--show]               por dev, uma vez: pede a API key, valida o login e grava ~/.psono-env.toml
+                                         (--show: colar as chaves com eco visível)
 
 Husky: .husky/pre-push -> "npx psono-env sync". Credencial: \`psono-env setup\` (ou variáveis PSONO_*).`;
 
@@ -383,8 +384,9 @@ export function caminhoConfigDev(env = process.env) {
   return env.PSONO_ENV_CONFIG || path.join(homedir(), ".psono-env.toml");
 }
 
-async function cmdSetup() {
+async function cmdSetup(flags) {
   const p = caminhoConfigDev();
+  const secreto = !flags.has("--show");   // --show: cola visível (terminal que não deixa colar com eco mudo)
   console.log(`psono-env setup — grava a tua API key do Psono em ${p} (0600, nunca no repo).`);
   console.log(`No Psono: Settings > API Keys > Create. DESMARCA "Secret Restriction" (a key precisa navegar o vault)`);
   console.log(`e marca leitura + escrita. A tela mostra id, private key e secret key; cola cada um aqui.`);
@@ -395,8 +397,8 @@ async function cmdSetup() {
   const cfg = {};
   cfg.server_url = (await perguntar("server_url (ex: https://psono.empresa.com/server): ")).replace(/\/+$/, "");
   cfg.api_key_id = await perguntar("api_key_id: ");
-  cfg.api_key_private_key = await perguntar("api_key_private_key: ", { secreto: true });
-  cfg.api_key_secret_key = await perguntar("api_key_secret_key: ", { secreto: true });
+  cfg.api_key_private_key = await perguntar("api_key_private_key: ", { secreto });
+  cfg.api_key_secret_key = await perguntar("api_key_secret_key: ", { secreto });
   fecharPrompt();
   for (const [k, v] of Object.entries(cfg)) if (!v) die(`${k} vazio`);
   if (!/^https?:\/\//.test(cfg.server_url)) die("server_url precisa começar com http(s)://");
@@ -430,7 +432,7 @@ export async function main(argv) {
   if (!pos.length || flags.has("--help") || pos[0] === "help") { console.log(AJUDA); return; }
   const [cmd, ...args] = pos;
   const tabela = {
-    setup: () => cmdSetup(),
+    setup: () => cmdSetup(flags),
     ls: () => cmdLs(args, flags),
     resolve: () => cmdResolve(),
     run: () => cmdRun(depois, flags),
