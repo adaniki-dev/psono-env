@@ -107,20 +107,21 @@ export function projeto(cwd = process.cwd()) {
   };
 }
 
-export async function camadas(vault, proj, existe = existsSync, ler = parseEnvFile) {
+export async function camadas(vault, proj, { existe = existsSync, ler = parseEnvFile, baseOpcional = false } = {}) {
   const br = branchAtual(proj.raiz);
   const vaultL = [];
   if (proj.shared) {
     const vs = await lerEnv(vault, proj.caminho(proj.shared), false);
     if (vs) vaultL.push({ nome: "vault:" + proj.shared, vars: vs });
   }
-  vaultL.push({ nome: "vault:" + proj.baseSecret, vars: await lerEnv(vault, proj.caminho(proj.baseSecret)) });
+  const base = await lerEnv(vault, proj.caminho(proj.baseSecret), !baseOpcional);
+  if (base) vaultL.push({ nome: "vault:" + proj.baseSecret, vars: base });
   if (br && !proj.ehTrunk(br)) {
     const vs = await lerEnv(vault, proj.caminhoBranch(br), false);
     if (vs) vaultL.push({ nome: "vault:" + slug(br), vars: vs });
   }
   const locais = camadasLocais(proj.raiz, br, existe).map((f) => ({ nome: f, vars: ler(path.join(proj.raiz, f)) }));
-  return { branch: br, vault: vaultL, locais, camadas: [...vaultL, ...locais] };
+  return { branch: br, vault: vaultL, locais, camadas: [...vaultL, ...locais], temBase: !!base };
 }
 
 /** Chaves que existem nas camadas locais e em nenhuma do vault — o drift que o sync sobe. */
@@ -297,9 +298,15 @@ async function subirChaves(vault, caminho, novas) {
     await vault.escreverSecret(r.item, data);
     return add.map((v) => v.key);
   }
-  if (r.faltou.length > 1)
-    die(`a pasta ${caminho.split("/").slice(0, -1).join("/")} não existe no vault. Cria na UI uma pasta com o nome do repo.`);
-  await vault.criarSecretEnv(r.store, r.pasta, caminho.split("/").filter(Boolean).at(-1), novas);
+  if (r.faltou.length > 2)
+    die(`a pasta ${caminho.split("/").slice(0, -1).join("/")} não existe no vault (faltou: ${r.faltou.slice(0, -1).join("/")}). Cria na UI.`);
+  let pasta = r.pasta;
+  if (r.faltou.length === 2) {
+    // só a pasta do repo falta (ex: /wascer-front): cria aqui mesmo, onde o resto do caminho já existe
+    pasta = await vault.criarPasta(r.store, r.pasta, r.faltou[0]);
+    aviso(`pasta ${caminho.split("/").slice(0, -1).join("/")} criada no vault`);
+  }
+  await vault.criarSecretEnv(r.store, pasta, caminho.split("/").filter(Boolean).at(-1), novas);
   return novas.map((v) => v.key);
 }
 
@@ -309,10 +316,11 @@ async function cmdSync(flags) {
   if (!br) { aviso("sync: fora de uma branch (detached HEAD?) — nada a fazer"); return; }
   try {
     const vault = await login();
-    const { vault: vaultL, locais } = await camadas(vault, proj);
+    const { vault: vaultL, locais, temBase } = await camadas(vault, proj, { baseOpcional: true });
     const novas = chavesNovas(vaultL, locais);
     if (!novas.length) { aviso(`sync: ${proj.base} sem drift de chave (branch ${br})`); return; }
-    const alvo = proj.ehTrunk(br) ? proj.caminho(proj.baseSecret) : proj.caminhoBranch(br);
+    if (!temBase) aviso(`sync: ${proj.caminho(proj.baseSecret)} não existe — bootstrap: criando a base com as chaves desta máquina`);
+    const alvo = (proj.ehTrunk(br) || !temBase) ? proj.caminho(proj.baseSecret) : proj.caminhoBranch(br);
     const subiu = await subirChaves(vault, alvo, novas);
     aviso(`sync: ${subiu.length} chave(s) nova(s) -> ${alvo}: ${subiu.join(", ")}`);
   } catch (e) {

@@ -126,6 +126,14 @@ export class Vault {
     return item;
   }
 
+  /** Cria uma subpasta (só na árvore; pasta não tem secret) e grava a árvore. Devolve o nó novo. */
+  async criarPasta(store, pasta, nome) {
+    const nova = { id: randomUUID(), name: nome, folders: [], items: [] };
+    (pasta.folders ??= []).push(nova);
+    await this.escreverStore(store);
+    return nova;
+  }
+
   /** Marca o item como deletado na árvore (lixo do Psono — recuperável pela UI) e grava a árvore. */
   async lixo(store, item) {
     item.deleted = true;

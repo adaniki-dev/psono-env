@@ -89,3 +89,11 @@ test("chavesNovas: só o que não está em nenhuma camada do vault; a última lo
   const locais = [{ nome: ".env", vars: [{ key: "A", value: "x" }, { key: "N", value: "1" }] }, { nome: ".env.local", vars: [{ key: "N", value: "2" }] }];
   assert.deepEqual(chavesNovas(vault, locais), [{ key: "N", value: "2" }]);
 });
+
+test("camadas com baseOpcional: sem base não morre, temBase=false; sem a opção morre", async () => {
+  const d = repo("repo");
+  const v = vaultCom({});
+  const r = await camadas(v, projeto(d), { baseOpcional: true });
+  assert.equal(r.temBase, false); assert.deepEqual(r.camadas, []);
+  await assert.rejects(camadas(v, projeto(d)), /secret não existe/);
+});
