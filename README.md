@@ -22,7 +22,7 @@ Uma pasta na raiz do datastore (ou compartilhada) com o **mesmo nome da pasta ra
 ## Instalar no projeto
 
 ```sh
-npm i -D github:<org>/psono-env husky
+npm i -D github:adaniki-dev/psono-env husky
 npx husky init
 echo "npx psono-env sync" > .husky/pre-push
 ```
