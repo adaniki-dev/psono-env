@@ -195,7 +195,12 @@ export async function listar(vault, caminho = "/", soEnv = true, out = console.l
   if (r.item) { out(`- ${r.item.name}  (${r.item.type})`); return; }
   const walk = async (store, no, ind) => {
     for (const f of vivos(no.folders)) {
-      const [st, sub] = await entrar(vault, store, f);
+      let st, sub;
+      try { [st, sub] = await entrar(vault, store, f); }
+      catch (e) {   // share que o usuário vê mas não lê (direito revogado, chave velha): lista e segue
+        out(" ".repeat(ind) + "📁 " + (f.name ?? "?") + "  [share, sem acesso]");
+        continue;
+      }
       out(" ".repeat(ind) + "📁 " + (f.name ?? "?") + (f.share_id ? "  [share]" : ""));
       await walk(st, sub, ind + 2);
     }

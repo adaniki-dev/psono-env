@@ -10,23 +10,34 @@ export const aviso = (m) => console.error("[psono-env] " + m);
 
 export function parseEnvTexto(txt, origem) {
   const out = [], seen = new Set();
-  txt.split(/\r?\n/).forEach((raw, i) => {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) return;
+  const linhas = txt.split(/\r?\n/);
+  for (let i = 0; i < linhas.length; i++) {
+    const line = linhas[i].trim();
+    if (!line || line.startsWith("#")) continue;
     const body = line.startsWith("export ") ? line.slice(7).trim() : line;
     const eq = body.indexOf("=");
-    if (eq < 1) die(`${origem}: linha ${i + 1} não parece KEY=VALUE: ${raw}`);
+    // nunca ecoar a linha: pode ser valor (pedaço de um PEM, senha), e mensagem de erro vai pra log
+    if (eq < 1) die(`${origem}: linha ${i + 1} não parece KEY=VALUE`);
     const key = body.slice(0, eq).trim();
     let value = body.slice(eq + 1).trim();
     const q = value[0];
-    if ((q === '"' || q === "'") && value.length > 1 && value.endsWith(q)) {
+    if (q === '"' || q === "'") {
+      // valor entre aspas pode atravessar linhas (PEM, JSON): junta até a aspa de fechamento
+      const ini = i;
+      while (!(value.length > 1 && value.endsWith(q))) {
+        if (++i >= linhas.length) die(`${origem}: linha ${ini + 1}: aspas ${q} sem fechamento`);
+        value += "\n" + linhas[i].trimEnd();
+      }
       value = value.slice(1, -1);
       if (q === '"') value = value.replace(/\\(n|"|\\)/g, (_, c) => (c === "n" ? "\n" : c));
+    } else {
+      const h = value.search(/\s#/);
+      if (h >= 0) value = value.slice(0, h).trim();
     }
     if (seen.has(key)) die(`${origem}: chave duplicada: ${key}`);
     seen.add(key);
     out.push({ key, value });
-  });
+  }
   return out;
 }
 

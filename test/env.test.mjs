@@ -66,3 +66,15 @@ test("branchAtual: branch órfã sem commit funciona; fora de git é null", () =
   assert.equal(branchAtual(d), "feat/nova");
   assert.equal(branchAtual(tmpdir()) === null || typeof branchAtual(tmpdir()) === "string", true);
 });
+
+test("parse: valor entre aspas atravessa linhas (PEM) e round-tripa pelo fmt; erro não ecoa a linha", () => {
+  const txt = 'A=1\nPEM="-----BEGIN X-----\nMIIB/abc+\n-----END X-----"\nB=\'x\ny\'\nC=v # comentário\n';
+  const v = parseEnvTexto(txt, "t");
+  assert.deepEqual(v.map((x) => x.key), ["A", "PEM", "B", "C"]);
+  assert.equal(v[1].value, "-----BEGIN X-----\nMIIB/abc+\n-----END X-----");
+  assert.equal(v[2].value, "x\ny");
+  assert.equal(v[3].value, "v");
+  assert.deepEqual(parseEnvTexto(v.map(fmt).join("\n"), "t2"), v);
+  assert.throws(() => parseEnvTexto('OK=1\nSEGREDO_SEM_IGUAL\n', "t3"), (e) => /linha 2/.test(e.message) && !/SEGREDO/.test(e.message));
+  assert.throws(() => parseEnvTexto('X="aberto\nsem fim\n', "t4"), /sem fechamento/);
+});
