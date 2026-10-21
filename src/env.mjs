@@ -1,5 +1,5 @@
 // Parte pura: arquivos .env, cascata, merge. Sem rede, sem disco além do que recebe.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
@@ -64,6 +64,37 @@ export function gitRoot(dir) {
   } catch { return null; }
 }
 
+/** O dir tem config do psono-env: .psono-env.json, ou "psono-env" (objeto) no topo do package.json. */
+export function temConfig(dir) {
+  if (existsSync(path.join(dir, ".psono-env.json"))) return true;
+  const pk = path.join(dir, "package.json");
+  if (!existsSync(pk)) return false;
+  try {
+    const v = JSON.parse(readFileSync(pk, "utf8"))["psono-env"];
+    return !!v && typeof v === "object" && !Array.isArray(v);
+  } catch { return false; }
+}
+
+/**
+ * Raiz do projeto: do cwd subindo até a raiz do git (inclusive), o 1º dir com config (temConfig).
+ * Sem nenhum, a raiz do git; fora de git, o cwd. É o que faz um app de monorepo ter env próprio.
+ */
+export function raizProjeto(cwd) {
+  const git = gitRoot(cwd);
+  if (!git) return cwd;
+  const topo = path.resolve(git);
+  let dir;
+  try { dir = realpathSync.native(path.resolve(cwd)); } catch { dir = path.resolve(cwd); }
+  const rel = path.relative(topo, dir);
+  // cwd fora da árvore do git (symlink estranho): não sobe às cegas, fica na raiz do git
+  if (rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel)) return git;
+  while (dir !== topo) {
+    if (temConfig(dir)) return dir;
+    dir = path.dirname(dir);
+  }
+  return git;
+}
+
 export function branchAtual(dir) {
   try {
     // symbolic-ref funciona em branch sem commit; falha em detached HEAD, que é o certo.
@@ -74,7 +105,7 @@ export function branchAtual(dir) {
 
 export const slug = (b) => b.replace(/[/\\]/g, "-");
 
-/** Camadas locais (.env.local, .env.<branch>.local) que existem na raiz. */
+/** Camadas locais (.env.local, .env.<branch>.local) que existem na raiz do projeto (raizProjeto). */
 export function camadasLocais(raiz, branch, existe) {
   const cand = [".env", ".env.local"];
   if (branch) cand.push(`.env.${slug(branch)}.local`);

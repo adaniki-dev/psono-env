@@ -125,3 +125,53 @@ test("sem credencial: sync segue (fail-open) mas aponta o setup; ls morre aponta
   assert.notEqual(code, 0);
   assert.match(err, /psono-env setup/);
 });
+
+// ---------------------------------------------------------------- raiz do projeto em subpasta (monorepo)
+
+const mkdir = (d) => { execFileSync("mkdir", ["-p", d]); return d; };
+
+test("monorepo: apps/x com .psono-env.json é a raiz — base do override e .env.local de apps/x", async () => {
+  const d = repo("mono");
+  const x = mkdir(path.join(d, "apps", "x"));
+  // "/repo" é a pasta que o vaultCom simula; vem do override, não do nome "x" do app
+  writeFileSync(path.join(x, ".psono-env.json"), JSON.stringify({ base: "/repo" }));
+  writeFileSync(path.join(d, ".env.local"), "A=raiz\nR=1\n");
+  writeFileSync(path.join(x, ".env.local"), "A=x\n");
+  const p = projeto(x);
+  assert.equal(p.raiz, x); assert.equal(p.base, "/repo");
+  const r = await camadas(vaultCom({ base: [{ key: "B", value: "1" }] }), p);
+  assert.deepEqual(r.locais, [{ nome: ".env.local", vars: [{ key: "A", value: "x" }] }]);
+});
+
+test("monorepo: .psono-env.json sem base usa o nome do app; cwd em apps/x/src/a acha apps/x", () => {
+  const d = repo("mono");
+  const x = mkdir(path.join(d, "apps", "x"));
+  writeFileSync(path.join(x, ".psono-env.json"), "{}");
+  const p = projeto(mkdir(path.join(x, "src", "a")));
+  assert.equal(p.raiz, x); assert.equal(p.base, "/x");
+});
+
+test("monorepo: package.json com a chave de topo conta; sem ela (ou só em devDependencies) não para a busca", () => {
+  const d = repo("mono");
+  const x = mkdir(path.join(d, "apps", "x"));
+  writeFileSync(path.join(x, "package.json"), JSON.stringify({ name: "x", "psono-env": { base: "/Wascer/Front" } }));
+  const src = mkdir(path.join(x, "src"));
+  writeFileSync(path.join(src, "package.json"), JSON.stringify({ name: "src", devDependencies: { "psono-env": "^2.0.0" } }));
+  const p = projeto(mkdir(path.join(src, "a")));
+  assert.equal(p.raiz, x); assert.equal(p.base, "/Wascer/Front");
+});
+
+test("monorepo: nada encontrado no caminho → raiz do git, como antes", () => {
+  const d = repo("mono");
+  const x = mkdir(path.join(d, "apps", "x"));
+  writeFileSync(path.join(x, "package.json"), JSON.stringify({ name: "x", dependencies: { "psono-env": "^2.0.0" } }));
+  const p = projeto(x);
+  assert.equal(p.raiz, d); assert.equal(p.base, "/mono");
+});
+
+test("monorepo: override na raiz do git continua valendo pra subpasta sem config própria", () => {
+  const d = repo("mono");
+  writeFileSync(path.join(d, ".psono-env.json"), JSON.stringify({ base: "/Wascer/Mono" }));
+  const p = projeto(mkdir(path.join(d, "apps", "y")));
+  assert.equal(p.raiz, d); assert.equal(p.base, "/Wascer/Mono");
+});

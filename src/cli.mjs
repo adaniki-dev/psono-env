@@ -1,7 +1,7 @@
 // psono-env — env em camadas: a pasta do Psono com o NOME DO REPO é a referência, a branch é o override.
 //
 // CONVENÇÃO (zero config por repo):
-//   /<repo>/base            o env de referência de desenvolvimento (a pasta tem o nome da raiz do git)
+//   /<repo>/base            o env de referência de desenvolvimento (a pasta tem o nome da raiz do projeto)
 //   /<repo>/<branch>        chaves NOVAS que uma branch precisa — nasce sozinho no `git push` (sync)
 //   /<repo>/_shared         opcional, camada comum
 //
@@ -15,6 +15,9 @@
 // OVERRIDE (só se precisar): "psono-env" no package.json, ou .psono-env.json na raiz:
 //   { "base": "/Wascer/Backend", "baseSecret": "Staging", "shared": null, "trunk": ["main"], "protect": [] }
 //
+// RAIZ DO PROJETO: do cwd subindo até a raiz do git, o 1º dir com um desses overrides; sem nenhum,
+// a raiz do git. Num monorepo, apps/x com .psono-env.json tem vault e .env.local próprios.
+//
 // CREDENCIAL (por máquina, nunca no repo): ~/.psono-env.toml  (ou variáveis PSONO_SERVER_URL,
 // PSONO_API_KEY_ID, PSONO_API_KEY_PRIVATE_KEY, PSONO_API_KEY_SECRET_KEY)
 import { existsSync, readFileSync, writeFileSync, unlinkSync, statSync, readdirSync } from "node:fs";
@@ -23,7 +26,7 @@ import { randomBytes } from "node:crypto";
 import { homedir, platform, release } from "node:os";
 import path from "node:path";
 import { Vault, VARS_FIELD, ENV_TYPE, resolverCaminho, listar, lerEnv } from "./vault.mjs";
-import { die, ErroPsonoEnv, aviso, parseEnvFile, fmt, nomeValido, avisarNomesInvalidos, gitRoot, branchAtual, slug,
+import { die, ErroPsonoEnv, aviso, parseEnvFile, fmt, nomeValido, avisarNomesInvalidos, raizProjeto, branchAtual, slug,
          camadasLocais, compor, mesclar, diffChaves } from "./env.mjs";
 import { perguntar, fecharPrompt, tomlCredencial, gravarPrivado } from "./setup.mjs";
 
@@ -89,6 +92,7 @@ export function carregarConfig(env = process.env) {
 
 // ---------------------------------------------------------------- projeto (convenção + override)
 
+/** Override da raiz do projeto: .psono-env.json ganha do "psono-env" do package.json. */
 export function lerOverride(raiz) {
   const j = path.join(raiz, ".psono-env.json");
   if (existsSync(j)) return JSON.parse(readFileSync(j, "utf8"));
@@ -98,7 +102,7 @@ export function lerOverride(raiz) {
 }
 
 export function projeto(cwd = process.cwd()) {
-  const raiz = gitRoot(cwd) || cwd;
+  const raiz = raizProjeto(cwd);
   const ov = lerOverride(raiz);
   const base = "/" + String(ov.base || path.basename(raiz)).replace(/^\/+|\/+$/g, "");
   return {
