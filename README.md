@@ -15,7 +15,7 @@ O de baixo ganha. Não tem main nem staging aqui: é ferramenta de desenvolvedor
 
 ## Convenção no Psono
 
-Uma pasta na raiz do datastore (ou compartilhada) com o **mesmo nome da pasta raiz do repo git**
+Uma pasta na raiz do datastore (ou compartilhada) com o **mesmo nome da pasta raiz do repo git** (ou do app, ver Monorepo)
 (`wascer-backend`, `admin-wascer`...), e dentro dela um secret *Environment Variables* chamado
 `base`. Os secrets de branch (`feat-pagamento`) nascem sozinhos. Opcional: `_shared`.
 
@@ -97,6 +97,11 @@ No `package.json`:
 { "psono-env": { "base": "/Wascer/Backend", "baseSecret": "Staging", "shared": null, "trunk": ["main"], "protect": ["prod"] } }
 ```
 ou o mesmo objeto num `.psono-env.json` na raiz (ganha do package.json).
+
+**Monorepo:** a raiz do projeto é o primeiro diretório, subindo do cwd até a raiz do git, que tem
+`.psono-env.json` ou a chave `"psono-env"` no topo do `package.json` (em `dependencies` não conta).
+É dessa pasta que saem o nome do vault, o override e os `.env`/`.env.local`, então `apps/x` com um
+`.psono-env.json` (pode ser `{}`) tem env próprio. Sem nenhum no caminho, vale a raiz do git.
 
 ## Dev
 
